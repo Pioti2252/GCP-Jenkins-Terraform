@@ -1,6 +1,6 @@
 terraform {
   backend "gcs" {
-    bucket  = "first-jenkins-488416-tfstate"
-    prefix  = "tfstate/state"
+    bucket  = "first-jenkins-488416-ftstate"
+    prefix  = "ftstate/state"
   }
 }

@@ -13,3 +13,15 @@ variable "zone" {
 variable "artifact_registry_repo_name" {
   type = string
 }
+
+variable "cluster_name" {
+  type = string
+}
+
+variable "gke_node_count" {
+  type = number
+}
+
+variable "gke_machine_type" {
+  type = string
+}

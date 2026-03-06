@@ -21,3 +21,15 @@ output "artifact_registry_repository_name" {
 output "artifact_registry_repository_url" {
   value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.docker_repo.repository_id}"
 }
+
+output "gke_cluster_name" {
+  value = google_container_cluster.primary.name
+}
+
+output "gke_cluster_location" {
+  value = google_container_cluster.primary.location
+}
+
+output "gke_endpoint" {
+  value = google_container_cluster.primary.endpoint
+}

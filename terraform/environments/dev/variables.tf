@@ -25,3 +25,11 @@ variable "gke_node_count" {
 variable "gke_machine_type" {
   type = string
 }
+
+variable "gke_machine_type" {
+  type = string
+}
+
+variable "gke_disk_size_gb" {
+  type = number
+}

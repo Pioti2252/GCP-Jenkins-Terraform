@@ -1,0 +1,42 @@
+controller:
+  admin:
+    username: admin
+    password: admin123456
+
+  serviceType: LoadBalancer
+
+  installPlugins:
+    - kubernetes
+    - workflow-aggregator
+    - git
+    - github
+    - configuration-as-code
+    - credentials-binding
+    - docker-workflow
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1000m"
+      memory: "2Gi"
+
+  javaOpts: "-Djenkins.install.runSetupWizard=false"
+
+  serviceAccount:
+    create: true
+    name: jenkins
+
+  JCasC:
+    defaultConfig: true
+
+agent:
+  enabled: true
+
+persistence:
+  enabled: true
+  size: "10Gi"
+
+rbac:
+  create: true

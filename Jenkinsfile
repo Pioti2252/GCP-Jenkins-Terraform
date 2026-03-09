@@ -50,9 +50,10 @@ spec:
       steps {
         container('kaniko') {
           sh '''
+            cd ${WORKSPACE}/apps
             /kaniko/executor \
-              --context=${WORKSPACE} \
-              --dockerfile=apps/Dockerfile \
+              --context=${pwd} \
+              --dockerfile=Dockerfile \
               --destination=${IMAGE} \
               --verbosity=info
           '''

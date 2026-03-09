@@ -67,7 +67,6 @@ spec:
       steps {
         container('kubectl') {
           sh '''
-            kubectl apply -f k8s/namespace.yaml
             kubectl apply -f k8s/service.yaml
             kubectl apply -f k8s/deployment.yaml
             kubectl -n demo set image deployment/hello-app hello-app=${IMAGE}

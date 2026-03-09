@@ -1,0 +1,64 @@
+pipeline {
+  agent any
+
+  environment {
+    PROJECT_ID = "first-jenkins-488416"
+    REGION     = "europe-west1"
+    REPO       = "demo-repo"
+    APP_NAME   = "hello-app"
+
+    IMAGE      = "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${APP_NAME}:${BUILD_NUMBER}"
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Build image') {
+      steps {
+        script {
+          sh '''
+            cd apps/hello-app
+            docker build -t ${IMAGE} .
+          '''
+        }
+      }
+    }
+
+    stage('Auth to GCP') {
+      steps {
+        withCredentials([file(credentialsId: 'gcp-sa-key', variable: 'GOOGLE_APPLICATION_CREDENTIALS')]) {
+          sh '''
+            gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}
+            gcloud config set project ${PROJECT_ID}
+            gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+          '''
+        }
+      }
+    }
+
+    stage('Push image') {
+      steps {
+        sh '''
+          docker push ${IMAGE}
+        '''
+      }
+    }
+
+    stage('Deploy to GKE') {
+      steps {
+        sh '''
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl -n demo set image deployment/hello-app hello-app=${IMAGE} || true
+          kubectl apply -f k8s/deployment.yaml
+          kubectl -n demo set image deployment/hello-app hello-app=${IMAGE}
+          kubectl rollout status deployment/hello-app -n demo
+        '''
+      }
+    }
+  }
+}

@@ -52,7 +52,7 @@ spec:
           sh '''
             /kaniko/executor \
               --context=${WORKSPACE} \
-              --dockerfile=apps/hello-app/Dockerfile \
+              --dockerfile=apps/Dockerfile \
               --destination=${IMAGE} \
               --verbosity=info
           '''

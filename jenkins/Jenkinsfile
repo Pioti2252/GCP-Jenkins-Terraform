@@ -1,12 +1,41 @@
 pipeline {
-  agent any
+  agent {
+    kubernetes {
+      yaml """
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: jenkins-kaniko-agent
+spec:
+  serviceAccountName: jenkins
+  containers:
+    - name: kaniko
+      image: gcr.io/kaniko-project/executor:latest
+      command:
+        - /busybox/cat
+      tty: true
+      volumeMounts:
+        - name: kaniko-secret
+          mountPath: /kaniko/.docker
+    - name: kubectl
+      image: bitnami/kubectl:latest
+      command:
+        - cat
+      tty: true
+  volumes:
+    - name: kaniko-secret
+      secret:
+        secretName: kaniko-secret
+"""
+    }
+  }
 
   environment {
     PROJECT_ID = "first-jenkins-488416"
     REGION     = "europe-west1"
     REPO       = "demo-repo"
     APP_NAME   = "hello-app"
-
     IMAGE      = "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${APP_NAME}:${BUILD_NUMBER}"
   }
 
@@ -17,47 +46,31 @@ pipeline {
       }
     }
 
-    stage('Build image') {
+    stage('Build and Push') {
       steps {
-        script {
+        container('kaniko') {
           sh '''
-            cd apps/hello-app
-            docker build -t ${IMAGE} .
+            /kaniko/executor \
+              --dockerfile=${WORKSPACE}/apps/hello-app/Dockerfile \
+              --context=${WORKSPACE}/apps/hello-app \
+              --destination=${IMAGE} \
+              --verbosity=info
           '''
         }
       }
     }
 
-    stage('Auth to GCP') {
+    stage('Deploy') {
       steps {
-        withCredentials([file(credentialsId: 'gcp-sa-key', variable: 'GOOGLE_APPLICATION_CREDENTIALS')]) {
+        container('kubectl') {
           sh '''
-            gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}
-            gcloud config set project ${PROJECT_ID}
-            gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+            kubectl apply -f k8s/namespace.yaml
+            kubectl apply -f k8s/service.yaml
+            kubectl apply -f k8s/deployment.yaml
+            kubectl -n demo set image deployment/hello-app hello-app=${IMAGE}
+            kubectl rollout status deployment/hello-app -n demo
           '''
         }
-      }
-    }
-
-    stage('Push image') {
-      steps {
-        sh '''
-          docker push ${IMAGE}
-        '''
-      }
-    }
-
-    stage('Deploy to GKE') {
-      steps {
-        sh '''
-          kubectl apply -f k8s/namespace.yaml
-          kubectl apply -f k8s/service.yaml
-          kubectl -n demo set image deployment/hello-app hello-app=${IMAGE} || true
-          kubectl apply -f k8s/deployment.yaml
-          kubectl -n demo set image deployment/hello-app hello-app=${IMAGE}
-          kubectl rollout status deployment/hello-app -n demo
-        '''
       }
     }
   }

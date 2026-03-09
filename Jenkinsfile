@@ -19,7 +19,7 @@ spec:
         - name: kaniko-secret
           mountPath: /kaniko/.docker
     - name: kubectl
-      image: bitnami/kubectl:latest
+      image: alpine/k8s:1.30.14
       command:
         - cat
       tty: true

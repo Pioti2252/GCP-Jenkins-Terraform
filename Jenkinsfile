@@ -51,8 +51,8 @@ spec:
         container('kaniko') {
           sh '''
             /kaniko/executor \
-              --dockerfile=${WORKSPACE}/apps/hello-app/Dockerfile \
-              --context=${WORKSPACE}/apps/hello-app \
+              --context=${WORKSPACE} \
+              --dockerfile=apps/hello-app/Dockerfile \
               --destination=${IMAGE} \
               --verbosity=info
           '''

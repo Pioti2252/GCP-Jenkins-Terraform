@@ -35,3 +35,9 @@ resource "google_project_iam_member" "jenkins_gsa_roles" {
   role     = each.value
   member   = "serviceAccount:${google_service_account.jenkins_gsa.email}"
 }
+
+resource "google_service_account_iam_member" "wi_binding" {
+  service_account_id = google_service_account.jenkins_gsa.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[jenkins/jenkins]"
+}

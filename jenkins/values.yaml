@@ -27,9 +27,8 @@ controller:
   serviceAccount:
     create: true
     name: jenkins
-
-  JCasC:
-    defaultConfig: true
+    annotations:
+      iam.gke.io/gcp-service-account: jenkins-gsa@first-jenkins-488416.iam.gserviceaccount.com
 
 agent:
   enabled: true

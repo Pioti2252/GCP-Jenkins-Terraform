@@ -1,14 +1,12 @@
-from flask import Flask
+FROM python:3.11-slim
 
-app = Flask(__name__)
+WORKDIR /app
 
-@app.route("/")
-def hello():
-    return "Hello from Jenkins + GKE + Terraform!"
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-@app.route("/health")
-def health():
-    return "ok", 200
+COPY app.py .
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+EXPOSE 8080
+
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app"]

@@ -52,7 +52,7 @@ spec:
           sh '''
             cd ${WORKSPACE}/apps
             /kaniko/executor \
-              --context=${pwd} \
+              --context=$(pwd) \
               --dockerfile=Dockerfile \
               --destination=${IMAGE} \
               --verbosity=info

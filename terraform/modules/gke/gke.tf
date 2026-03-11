@@ -2,8 +2,8 @@ resource "google_container_cluster" "primary" {
   name     = var.cluster_name
   location = var.region
 
-  network    = google_compute_network.vpc.id
-  subnetwork = google_compute_subnetwork.subnet.id
+  network    = var.network_id
+  subnetwork = var.subnetwork_id
 
   deletion_protection = false
 
@@ -13,8 +13,8 @@ resource "google_container_cluster" "primary" {
   networking_mode = "VPC_NATIVE"
 
   ip_allocation_policy {
-    cluster_secondary_range_name  = "gke-pods-range"
-    services_secondary_range_name = "gke-services-range"
+    cluster_secondary_range_name  = var.pods_range_name
+    services_secondary_range_name = var.services_range_name
   }
 
   workload_identity_config {
@@ -26,8 +26,8 @@ resource "google_container_cluster" "primary" {
   }
 
   node_config {
-    machine_type = "e2-medium"
-    disk_size_gb = 20
+    machine_type = var.gke_machine_type
+    disk_size_gb = var.gke_disk_size_gb
     disk_type    = "pd-standard"
 
     oauth_scopes = [
@@ -45,9 +45,10 @@ resource "google_container_node_pool" "primary_nodes" {
 
   node_config {
     machine_type    = var.gke_machine_type
-    disk_size_gb = var.gke_disk_size_gb
-    disk_type = "pd-standard"
-    service_account = google_service_account.terraform_sa.email
+    disk_size_gb    = var.gke_disk_size_gb
+    disk_type       = "pd-standard"
+    service_account = var.node_service_account
+
     oauth_scopes = [
       "https://www.googleapis.com/auth/cloud-platform"
     ]

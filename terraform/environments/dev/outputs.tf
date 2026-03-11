@@ -1,35 +1,27 @@
-output "vpc_name" {
-  value = google_compute_network.vpc.name
-}
-
-output "subnet_name" {
-  value = google_compute_subnetwork.subnet.name
-}
-
-output "pods_range_name" {
-  value = "gke-pods-range"
-}
-
-output "services_range_name" {
-  value = "gke-services-range"
-}
-
 output "artifact_registry_repository_name" {
-  value = google_artifact_registry_repository.docker_repo.repository_id
+  value = module.artifact_registry.repository_id
 }
 
 output "artifact_registry_repository_url" {
-  value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.docker_repo.repository_id}"
+  value = "${var.region}-docker.pkg.dev/${var.project_id}/${module.artifact_registry.repository_id}"
 }
 
 output "gke_cluster_name" {
-  value = google_container_cluster.primary.name
+  value = module.gke.cluster_name
 }
 
 output "gke_cluster_location" {
-  value = google_container_cluster.primary.location
+  value = module.gke.cluster_location
 }
 
 output "gke_endpoint" {
-  value = google_container_cluster.primary.endpoint
+  value = module.gke.endpoint
+}
+
+output "vpc_name" {
+  value = module.network.vpc_name
+}
+
+output "subnet_name" {
+  value = module.network.subnet_name
 }

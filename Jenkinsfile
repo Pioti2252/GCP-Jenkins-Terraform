@@ -15,18 +15,11 @@ spec:
       command:
         - /busybox/cat
       tty: true
-      volumeMounts:
-        - name: kaniko-secret
-          mountPath: /kaniko/.docker
     - name: kubectl
       image: alpine/k8s:1.30.14
       command:
         - cat
       tty: true
-  volumes:
-    - name: kaniko-secret
-      secret:
-        secretName: kaniko-secret
 """
     }
   }
@@ -43,6 +36,18 @@ spec:
     stage('Checkout') {
       steps {
         checkout scm
+      }
+    }
+
+    stage('Check GCP Identity') {
+      steps {
+        container('kaniko') {
+          sh '''
+            /busybox/wget -qO- \
+              --header="Metadata-Flavor: Google" \
+              http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email || true
+          '''
+        }
       }
     }
 

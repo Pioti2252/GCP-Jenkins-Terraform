@@ -74,6 +74,7 @@ spec:
           sh '''
             kubectl apply -f k8s/service.yaml
             kubectl apply -f k8s/deployment.yaml
+            kubectl apply -f k8s/podmonitoring.yaml
             kubectl -n demo set image deployment/hello-app hello-app=${IMAGE}
             kubectl rollout status deployment/hello-app -n demo
           '''

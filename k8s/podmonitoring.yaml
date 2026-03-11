@@ -1,0 +1,13 @@
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: hello-app
+  namespace: demo
+spec:
+  selector:
+    matchLabels:
+      app: hello-app
+  endpoints:
+    - port: 8080
+      path: /metrics
+      interval: 30s

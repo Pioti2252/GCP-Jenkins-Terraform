@@ -15,7 +15,7 @@ def hello():
 
 @app.route("/health")
 def health():
-    return "ok", 200
+    return "okkk", 200
 
 @app.route("/metrics")
 def metrics():

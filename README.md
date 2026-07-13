@@ -1,8 +1,8 @@
-# GCP Java GKE CI/CD
+# GCP Jenkins Terraform
 
-A small end-to-end DevOps showcase project: a containerized Spring Boot (Java 21) shop API, provisioned on **Google Kubernetes Engine (Autopilot)** with **Terraform**, deployed across two environments through a **Jenkins CI/CD pipeline**, and secured with IaC/image scanning, Workload Identity, and a private Cloud SQL database.
+An end-to-end CI/CD platform showcase: **Jenkins running inside GKE itself** (installed via Helm), building container images with **Kaniko** (no Docker daemon, no privileged containers), and deploying a small Python (Flask) app through a Kubernetes-native pipeline — all provisioned by modular Terraform with a real Workload Identity setup.
 
-The goal of this repository is to demonstrate a realistic, minimal-but-complete DevOps workflow: Infrastructure as Code → containerization → automated build/test/scan/deploy → promotion between environments → runtime observability.
+This is the most "platform-style" project in the series: instead of a Jenkins VM sitting next to the cluster, Jenkins *is* a workload on the cluster, authenticating to GCP without a single static credential.
 
 ---
 
@@ -10,50 +10,45 @@ The goal of this repository is to demonstrate a realistic, minimal-but-complete 
 
 ```mermaid
 flowchart LR
-    Dev[Developer] -->|git push| Jenkins[Jenkins VM]
+    Dev[Developer] -->|git push| GH[GitHub]
+    GH -->|webhook| Jenkins[Jenkins<br/>running on GKE]
 
     subgraph CI/CD Pipeline
-        Jenkins --> Test[Run tests<br/>Testcontainers]
-        Test --> IaC[Checkov<br/>IaC scan]
-        IaC --> Build[Build Docker image]
-        Build --> Trivy[Trivy<br/>image scan]
-        Trivy --> Push[Push to Artifact Registry]
-        Push --> DeployDev[Deploy to DEV]
-        DeployDev --> SmokeDev[Smoke test DEV]
-        SmokeDev --> Gate{Manual<br/>approval}
-        Gate --> DeployProd[Deploy to PROD<br/>same image, retagged]
-        DeployProd --> SmokeProd[Smoke test PROD]
+        Jenkins --> Checkout[Checkout repo]
+        Checkout --> Kaniko[Kaniko build<br/>build number tag]
+        Kaniko --> Push[Push to Artifact Registry]
+        Push --> Deploy[kubectl apply +<br/>kubectl set image]
+        Deploy --> Rollout[Rollout status check]
     end
 
     subgraph GCP
-        subgraph VPC[VPC / Private Service Access]
-            subgraph GKEDev[GKE Autopilot – DEV]
-                PodDev[App Pod + cloud-sql-proxy]
-                HPADev[HPA]
+        AR[(Artifact Registry)]
+        subgraph VPC[VPC-native / secondary ranges]
+            subgraph GKE[GKE Cluster]
+                JenkinsPod[Jenkins controller<br/>+ dynamic Kaniko agents]
+                AppPod1[hello-app Pod]
+                SVC[LoadBalancer Service]
+                PM[PodMonitoring]
             end
-            subgraph GKEProd[GKE Autopilot – PROD]
-                PodProd[App Pod + cloud-sql-proxy]
-                HPAProd[HPA]
-            end
-            SQLDev[(Cloud SQL DEV<br/>private IP)]
-            SQLProd[(Cloud SQL PROD<br/>private IP)]
         end
     end
 
-    DeployDev --> GKEDev
-    DeployProd --> GKEProd
-    PodDev -.Workload Identity.-> SQLDev
-    PodProd -.Workload Identity.-> SQLProd
-    PodDev -.scrapes Prometheus endpoint.-> GMP[Google Managed Prometheus]
-    PodProd -.scrapes Prometheus endpoint.-> GMP
+    Push --> AR
+    Deploy --> GKE
+    SVC --> AppPod1
+    AppPod1 -.exposes metrics endpoint.-> PM
+    PM -.scraped by.-> GMP[Google Managed Prometheus]
+
+    JenkinsPod -.Workload Identity.-> JenkinsGSA[jenkins-gsa]
+    JenkinsGSA -.artifact registry writer role.-> AR
 ```
 
 **Flow summary:**
-1. Infrastructure (Artifact Registry, GKE Autopilot cluster, Cloud SQL, IAM, Jenkins VM) is provisioned per environment via Terraform, with remote state in a GCS bucket.
-2. Every pipeline run: run unit/integration tests → scan the Terraform/Kubernetes code with Checkov → build the Docker image → scan it with Trivy → push to Artifact Registry → deploy to DEV → run a smoke test against the live `/actuator/health` and `/api/products` endpoints.
-3. After a manual approval step, the exact same image is retagged and promoted to PROD, then smoke-tested again.
-4. The app exposes Prometheus-compatible metrics via Actuator, scraped natively by Google Managed Prometheus — no Prometheus Operator to install or maintain.
-5. An HPA scales each deployment based on CPU utilization; a `cloud-sql-proxy` sidecar handles the private connection to Cloud SQL through Workload Identity.
+1. Terraform provisions a dedicated VPC-native network, a GKE cluster with Workload Identity enabled, an Artifact Registry repository, and the IAM bindings tying the `jenkins` Kubernetes Service Account to a Google Service Account (`jenkins-gsa`).
+2. Jenkins itself runs on the cluster (Helm chart), and every pipeline run spins up an ephemeral pod with a **Kaniko** container to build the image and a `kubectl` container to deploy it — no Docker socket is ever mounted.
+3. Kaniko builds and pushes the image to Artifact Registry, authenticating purely through Workload Identity.
+4. The pipeline applies the Kubernetes manifests (`Service`, `Deployment`, `PodMonitoring`), updates the deployment's image, and blocks on `kubectl rollout status` for a pass/fail signal.
+5. The app exposes Prometheus metrics at `/metrics`, scraped natively by Google Managed Prometheus via `PodMonitoring` — no Prometheus Operator to install.
 
 ---
 
@@ -61,14 +56,13 @@ flowchart LR
 
 | Layer | Technology |
 |---|---|
-| Application | Java 21, Spring Boot 4, Spring Data JPA, Flyway, Bean Validation |
-| Testing | JUnit 5, Testcontainers, Mockito |
-| Containerization | Docker (multi-stage build) |
-| Infrastructure | Terraform, Google Cloud (VPC, GKE Autopilot, Cloud SQL, Artifact Registry, IAM) |
-| Orchestration | Kubernetes (Deployment, Service, Ingress, HPA, ConfigMap), Kustomize |
-| CI/CD | Jenkins (Declarative Pipeline) |
-| Security | Checkov (IaC scanning), Trivy (image scanning), Workload Identity |
-| Monitoring | Google Managed Prometheus (`PodMonitoring`, `/actuator/prometheus`) |
+| Application | Python 3.11, Flask, `prometheus_client`, Gunicorn |
+| Image build | Kaniko (daemonless, in-cluster builds) |
+| Infrastructure | Terraform (modules + dev environment), Google Cloud (VPC-native network, GKE, Artifact Registry, IAM) |
+| Orchestration | Kubernetes (Namespace, Deployment, Service, RBAC, PodMonitoring) |
+| CI/CD | Jenkins (installed via Helm, running inside GKE, Kubernetes pod agents) |
+| Authentication | Workload Identity (KSA `jenkins/jenkins` → GSA `jenkins-gsa`) |
+| Monitoring | Google Managed Prometheus (`PodMonitoring`, `/metrics`) |
 | Registry | Google Artifact Registry |
 
 ---
@@ -77,25 +71,27 @@ flowchart LR
 
 ```
 .
-├── java-shop/
-│   ├── src/main/java/...   # Application code (product, order, health, exception)
-│   ├── src/test/java/...   # Unit + integration tests (Testcontainers)
-│   ├── Dockerfile           # Multi-stage build (JDK -> JRE)
-│   └── docker-compose.yml   # Local dev environment (app + Postgres)
-├── terraform/
-│   ├── bootstrap/            # GCS bucket for remote state (run once)
-│   ├── modules/               # gke, cloud-sql, iam, artifact-registry,
-│   │                          # jenkins-vm, private-service-access
-│   └── environments/
-│       ├── dev/
-│       └── prod/
+├── apps/
+│   ├── app.py                # Flask app (/, /health, /metrics)
+│   ├── Dockerfile
+│   └── requirements.txt
+├── jenkins/
+│   ├── values.yaml            # Helm values for the Jenkins controller
+│   └── jenkins-rbac.yaml      # ServiceAccount, Role, RoleBinding for Jenkins
 ├── k8s/
-│   ├── base/                  # Deployment, Service, Ingress, HPA, ConfigMap,
-│   │                          # ServiceAccount, PodMonitoring, BackendConfig
-│   └── overlays/
-│       ├── dev/                 # 1 replica, smaller resources
-│       └── prod/                # 2 replicas, larger resources
-└── Jenkinsfile                 # Test, scan, build, deploy, promote, smoke test
+│   ├── namespace.yaml          # "demo" namespace
+│   ├── deployment.yaml          # readiness + liveness probes
+│   ├── service.yaml              # LoadBalancer Service
+│   └── podmonitoring.yaml        # Google Managed Prometheus scrape config
+├── terraform/
+│   ├── modules/
+│   │   ├── network/               # VPC + subnet with secondary ranges
+│   │   ├── iam/                   # terraform-sa, jenkins-gsa, Workload Identity binding
+│   │   ├── gke/                   # VPC-native cluster + dedicated node pool
+│   │   └── artifact_registry/
+│   └── environments/
+│       └── dev/
+└── Jenkinsfile                    # Kubernetes-agent pipeline: Kaniko build → deploy → verify
 ```
 
 ---
@@ -104,67 +100,69 @@ flowchart LR
 
 ### Prerequisites
 - A GCP project with billing enabled
-- `terraform` >= 1.6.0
+- `terraform` >= 1.5.0
 - `gcloud` CLI, authenticated (`gcloud auth login`)
-- `kubectl`, `docker`
-- A Jenkins instance with `docker`, `gcloud`, and `kubectl` available on the agent
+- `kubectl`, `helm`
 
 ### 1. Enable required GCP APIs
 ```bash
-gcloud services enable container.googleapis.com sqladmin.googleapis.com \
-  artifactregistry.googleapis.com servicenetworking.googleapis.com
+gcloud services enable container.googleapis.com artifactregistry.googleapis.com \
+  compute.googleapis.com iam.googleapis.com
 ```
 
-### 2. Bootstrap remote state
+### 2. Provision the infrastructure
 ```bash
-cd terraform/bootstrap
-terraform init
-terraform apply -var="project_id=<YOUR_PROJECT_ID>"
-```
-
-### 3. Provision the infrastructure
-```bash
-cd ../environments/dev
+cd terraform/environments/dev
 terraform init
 terraform apply \
   -var="project_id=<YOUR_PROJECT_ID>" \
-  -var="project_number=<YOUR_PROJECT_NUMBER>" \
-  -var="region=europe-central2" \
-  -var="zone=europe-central2-a" \
-  -var="database_password=<PASSWORD>" \
-  -var="allowed_ssh_cidr=<YOUR_IP>/32" \
-  -var="allowed_jenkins_cidr=<YOUR_IP>/32"
+  -var="region=europe-west1" \
+  -var="zone=europe-west1-b" \
+  -var="artifact_registry_repo_name=demo-repo" \
+  -var="cluster_name=demo-gke" \
+  -var="gke_node_count=2" \
+  -var="gke_machine_type=e2-medium" \
+  -var="gke_disk_size_gb=30"
 ```
-This creates the GKE Autopilot cluster, a private Cloud SQL instance, the Artifact Registry repository, IAM service accounts, and the Jenkins VM. `prod` is provisioned the same way from `terraform/environments/prod` (it reuses the same Jenkins instance).
+This creates the VPC-native network, the GKE cluster and node pool, the Artifact Registry repository, and the `jenkins-gsa` service account bound to `roles/artifactregistry.writer` via Workload Identity.
 
-### 4. Configure the Jenkins pipeline
-Point a Jenkins Declarative Pipeline job at the `Jenkinsfile` in this repo. The agent needs `gcloud` authenticated against the service accounts created in step 3 (via metadata-server credentials on the Jenkins VM — no long-lived keys required).
-
-### 5. Deploy
-Trigger the pipeline — it will run tests, scan the code and the image, push to Artifact Registry, deploy to DEV, smoke-test it, wait for manual approval, then promote the same image to PROD.
-
-### 6. (Optional) run locally
+### 3. Install Jenkins on the cluster
 ```bash
-cd java-shop
-docker compose up -d
-curl http://localhost:8080/actuator/health
+kubectl apply -f jenkins/jenkins-rbac.yaml
+
+helm repo add jenkins https://charts.jenkins.io
+helm repo update
+
+helm install jenkins jenkins/jenkins \
+  -n jenkins --create-namespace \
+  -f jenkins/values.yaml
+```
+> Before installing, replace the default admin credentials and the hardcoded `iam.gke.io/gcp-service-account` project ID in `jenkins/values.yaml` with your own — see [Design decisions & known limitations](#design-decisions--known-limitations) below.
+
+### 4. Configure the pipeline
+Point a Jenkins Pipeline job at the `Jenkinsfile` in this repo (a GitHub webhook can trigger it automatically on push). Update `PROJECT_ID` in the `environment` block to match your project.
+
+### 5. Deploy and verify
+```bash
+kubectl get svc hello-app -n demo
+curl http://<LOADBALANCER_IP>/health
+curl http://<LOADBALANCER_IP>/metrics
 ```
 
 ---
 
 ## Design decisions & known limitations
 
-This project intentionally favors clarity to stay readable as a portfolio piece. A few trade-offs, made explicit rather than hidden:
+This project focuses on showing a Kubernetes-native CI/CD platform (Jenkins-on-GKE, daemonless builds, Workload Identity) rather than a hardened production deployment. Trade-offs made explicit rather than hidden:
 
-- **Remote Terraform state** is used (GCS backend, one prefix per environment), but state locking relies on the default GCS mechanism rather than a dedicated lock table — fine for a single contributor, worth revisiting for a team setup.
-- **GKE Autopilot** was chosen over Standard mode to reduce operational surface (node pools, upgrades) at the expense of some low-level control (e.g. no custom DaemonSets).
-- **The default VPC** is used rather than a dedicated one — a deliberate simplification for a demo; a production setup would use a custom VPC with a private cluster.
-- **The Jenkins VM's service account** has a broad `cloud-platform` OAuth scope, while more narrowly-scoped IAM roles are also defined per environment. In a production setup, the scope would be trimmed to match the roles actually needed.
-- **Checkov runs in soft-fail mode** — it reports findings but doesn't block the pipeline yet. The natural next step is turning it into a hard gate once the baseline findings are triaged.
-- **Image promotion is tag-based** (`dev-<build>` → `prod-<build>` via `docker tag`), not digest-based. This keeps the pipeline readable, though promoting by digest would remove any theoretical ambiguity between what was tested and what is deployed.
-- **No TLS on the Ingress** — traffic is plain HTTP for the demo; a managed certificate would be the next step.
-- No GitOps layer (Argo CD/Flux) — deployments are pushed imperatively from Jenkins via `kubectl apply`.
+- ⚠️ **`jenkins/values.yaml` ships a hardcoded default admin password and exposes the Jenkins controller via a public `LoadBalancer`.** This is fine to get the chart running locally for a demo, but must never be used as-is: set a real admin password through a Kubernetes Secret / Jenkins Configuration-as-Code, and put the controller behind `ClusterIP` + port-forward or an authenticated Ingress instead of a public IP.
+- **The GKE node pool reuses `terraform-sa`** (the Terraform provisioning service account, which holds project-level admin roles) as its node service account, instead of a dedicated, minimally-scoped SA. Nodes should run with just the permissions they actually need (typically just log/metric writer + Artifact Registry reader).
+- **Workload Identity is only wired for Jenkins**, not for the application pods — `hello-app` doesn't currently need GCP APIs, but if it ever does, it would need its own KSA→GSA binding rather than inheriting the node's identity.
+- **No image or IaC scanning** in the pipeline (no Trivy/Checkov) — Kaniko builds and pushes without a vulnerability gate.
+- **Single environment (`dev`)** — no staging/production split or promotion flow.
+- **No HPA or resource requests/limits** on the application deployment.
+- **No TLS** on the app's `LoadBalancer` Service.
 
 ## Skills demonstrated
 
-Infrastructure as Code (Terraform, modules, multi-environment) · Kubernetes (GKE Autopilot, Kustomize, HPA, Workload Identity) · CI/CD automation (Jenkins, multi-stage pipelines, approval gates, rollback) · containerization (Docker multi-stage builds) · automated testing (JUnit, Testcontainers) · security scanning (Checkov, Trivy) · observability (Prometheus via Spring Boot Actuator/Micrometer) · GCP networking & IAM (private services access, service accounts, least-privilege roles).
+Infrastructure as Code (Terraform, modular, VPC-native networking) · Kubernetes-native CI/CD (Jenkins on GKE, dynamic pod agents) · daemonless container builds (Kaniko) · secure cloud authentication (Workload Identity, scoped IAM roles) · Kubernetes RBAC · observability (Prometheus metrics via `PodMonitoring` / Google Managed Prometheus) · debugging real platform issues (RBAC permission errors, Artifact Registry auth failures, service account misconfiguration).

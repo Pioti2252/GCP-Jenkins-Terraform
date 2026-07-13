@@ -44,8 +44,8 @@ flowchart LR
     DeployProd --> GKEProd
     PodDev -.Workload Identity.-> SQLDev
     PodProd -.Workload Identity.-> SQLProd
-    PodDev -.scrapes /actuator/prometheus.-> GMP[Google Managed Prometheus]
-    PodProd -.scrapes /actuator/prometheus.-> GMP
+    PodDev -.scrapes Prometheus endpoint.-> GMP[Google Managed Prometheus]
+    PodProd -.scrapes Prometheus endpoint.-> GMP
 ```
 
 **Flow summary:**
